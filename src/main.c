@@ -135,29 +135,37 @@ bool is_data_mounted(const char* title_id) { char path[MAX_PATH]; snprintf(path,
 bool wait_for_stability_fast(const char* path, const char* name) {
     struct stat st;
     time_t now = time(NULL);
+    char sys_path[MAX_PATH];
+    
+    // 先构造 sys_path，确保日志中可用
+    snprintf(sys_path, sizeof(sys_path), "%s/sce_sys", path);
 
     // 1. Check Root Folder Timestamp
-    if (stat(path, &st) != 0) return false; 
+    if (stat(path, &st) != 0) {
+        log_debug("  [WAIT] Failed to stat path: %s", path);
+        return false;
+    }
+    
     double diff = difftime(now, st.st_mtime);
 
-    // If modified > 10 seconds ago, it's stable.
+    // If modified > 10 seconds ago, check further
     if (diff > 10.0) {
         // Double check sce_sys just to be sure
-        char sys_path[MAX_PATH];
-        snprintf(sys_path, sizeof(sys_path), "%s/sce_sys", path);
         if (stat(sys_path, &st) == 0) {
             if (difftime(now, st.st_mtime) > 10.0) {
-                 return true;
+                return true; // Both root and sce_sys are stable
             }
         } else {
-             return true; // No sce_sys? Trust root.
+            // No sce_sys? Trust root stability
+            log_debug("  [WAIT] %s stable (root only, no sce_sys)", name);
+            return true;
         }
     }
     
-    
-    log_debug("  [WAIT] %s modified %.0fs ago. Waiting...", name, diff);
+    log_debug("  [WAIT] %s modified %.0fs ago. Waiting... path=%s sys_path=%s", 
+              name, diff, path, sys_path);
     sceKernelUsleep(2000000); // Wait 2s
-    return false; // Force re-scan next cycle
+    return false;
 }
 
 static int remount_system_ex(void) {
